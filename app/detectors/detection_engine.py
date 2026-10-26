@@ -1,10 +1,13 @@
 
+import re
+from datetime import datetime, timedelta
 from collections import deque
 from datetime import datetime, timedelta
 from app.core.config import load_config
 from app.core.entropy import calculate_file_entropy
 from pathlib import Path
 from app.database.connection import (
+    get_recent_alerts,
     get_recent_process_snapshots,
     save_alert,
     save_incident,
@@ -184,9 +187,9 @@ class DetectionEngine:
         activity["threat_score"] = score
         activity["threat_level"] = self.classify_threat_level(score)
 
-        # Save an alert when the threat score reaches Warning or Critical.
-   
-        # Save an alert only when the detected activity changes.
+       
+        # Save an alert only if a matching alert was not created
+        # during the last five minutes.
         if score >= 40:
             title = f"{activity['threat_level']} ransomware activity detected"
             description = (
@@ -197,26 +200,61 @@ class DetectionEngine:
             )
 
             fingerprint = (
-    activity["threat_level"],
-    activity["rapid_file_changes"],
-    activity["mass_renames"],
-    high_entropy,
-    cpu_spike,
-)
+                activity["threat_level"],
+                activity["rapid_file_changes"],
+                activity["mass_renames"],
+                high_entropy,
+                cpu_spike,
+            )
 
-            if fingerprint != self.last_alert_fingerprint:
+            cutoff = datetime.now() - timedelta(minutes=5)
+            duplicate_found = False
+
+           
+            for alert in get_recent_alerts(limit=100):
+                if alert.timestamp < cutoff:
+                    break
+
+                match = re.fullmatch(
+                    r"Detected (\d+) file modifications, "
+                    r"(\d+) file renames, "
+                    r"high_entropy=(True|False), "
+                    r"cpu_spike=(True|False)\.",
+                    alert.description,
+                )
+
+                if not match:
+                    continue
+
+                modification_count = int(match.group(1))
+                rename_count = int(match.group(2))
+
+                existing_fingerprint = (
+                    alert.threat_level,
+                    modification_count
+                    >= self.thresholds["rapid_file_changes"],
+                    rename_count
+                    >= self.thresholds["mass_renames"],
+                    match.group(3) == "True",
+                    match.group(4) == "True",
+                )
+
+                if existing_fingerprint == fingerprint:
+                    duplicate_found = True
+                    break
+
+
+            if not duplicate_found:
                 alert_id = save_alert(
                     title=title,
                     description=description,
                     threat_score=score,
                     threat_level=activity["threat_level"],
                 )
-
                 activity["alert_id"] = alert_id
-                self.last_alert_fingerprint = fingerprint
 
                 if activity["threat_level"] == "Critical":
-                    incident_id = save_incident(
+                    activity["incident_id"] = save_incident(
                         title="Critical Ransomware Investigation",
                         description=(
                             f"Critical threat detected with score {score}. "
@@ -227,7 +265,6 @@ class DetectionEngine:
                         severity="Critical",
                         alert_id=alert_id,
                     )
-                    activity["incident_id"] = incident_id
                 else:
                     activity["incident_id"] = None
             else:
@@ -236,7 +273,6 @@ class DetectionEngine:
         else:
             activity["alert_id"] = None
             activity["incident_id"] = None
-            self.last_alert_fingerprint = None
 
         return activity
 
