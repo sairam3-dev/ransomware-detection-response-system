@@ -1,0 +1,37 @@
+# RDRS application configuration
+
+app:
+  name: "Ransomware Detection and Response System"
+  simulation_mode: true
+
+monitoring:
+  watch_paths:
+    - "data/sandbox"
+  event_window_seconds: 60
+  entropy_sample_bytes: 65536
+
+thresholds:
+  rapid_file_changes: 20
+  mass_renames: 10
+  high_entropy: 7.0
+  cpu_spike_percent: 80
+
+threat_scoring:
+  rapid_encryption: 40
+  mass_rename: 30
+  high_entropy: 25
+  cpu_spike: 15
+  unknown_process: 10
+
+logging:
+  level: "INFO"
+  directory: "logs"
+
+process_monitoring:
+  known_processes:
+    - python.exe
+    - powershell.exe
+    - code.exe
+    - svchost.exe
+    - chrome.exe
+    - conhost.exe

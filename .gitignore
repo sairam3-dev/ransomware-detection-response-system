@@ -1,0 +1,38 @@
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Local database files
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+
+# Local sandbox and test data
+data/sandbox/
+
+# Runtime logs
+logs/
+*.log
+
+# Generated reports
+reports/*.json
+reports/*.csv
+
+# Editor and operating system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+data/sandbox/
