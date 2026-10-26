@@ -7,7 +7,12 @@ from sqlalchemy.orm import sessionmaker
 from app.database.models import Base
 
 
-DATABASE_PATH = Path("data/rdrs.db")
+import os
+
+DATABASE_PATH = Path(
+    os.environ.get("RDRS_DATABASE_PATH", "data/rdrs.db")
+)
+
 DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 DATABASE_URL = f"sqlite:///{DATABASE_PATH.as_posix()}"
