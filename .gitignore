@@ -36,3 +36,8 @@ reports/*.csv
 Thumbs.db
 
 data/sandbox/
+
+# Local quarantine artifacts
+data/quarantine/
+
+# Duplicate sandbox ignore entry already exists above

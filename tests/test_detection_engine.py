@@ -247,3 +247,73 @@ def test_duplicate_critical_activity_does_not_create_duplicate_incident():
 
     assert len(matching_incidents) == 1
 
+
+def test_critical_incident_quarantines_sandbox_evidence(
+    tmp_path, monkeypatch
+):
+    from datetime import datetime
+    from pathlib import Path
+    import app.detectors.detection_engine as detection_module
+
+    # Use a real disposable file, but redirect quarantine to a test folder.
+    sandbox = tmp_path / "sandbox"
+    sandbox.mkdir()
+    source = sandbox / "evidence.txt"
+    source.write_text("Harmless RDRS integration test evidence.")
+
+    quarantine_dir = tmp_path / "quarantine"
+
+    def fake_quarantine_file(file_path):
+        source_path = Path(file_path).resolve()
+
+        if not source_path.is_file():
+            return {"success": False, "reason": "Missing file"}
+
+        destination = quarantine_dir / source_path.name
+        quarantine_dir.mkdir(parents=True, exist_ok=True)
+
+        import shutil
+        shutil.copy2(source_path, destination)
+
+        return {
+            "success": True,
+            "source": str(source_path),
+            "destination": str(destination),
+        }
+
+    monkeypatch.setattr(
+        detection_module,
+        "quarantine_file",
+        fake_quarantine_file,
+    )
+
+    engine = detection_module.DetectionEngine()
+
+    # Generate enough simulated events to reach Critical severity.
+    for i in range(20):
+        engine.add_event({
+            "event_type": "modified",
+            "file_path": str(source),
+            "timestamp": datetime.now(),
+        })
+
+    for i in range(10):
+        engine.add_event({
+            "event_type": "moved",
+            "file_path": str(source),
+            "destination_path": str(sandbox / f"renamed_{i}.txt"),
+            "timestamp": datetime.now(),
+        })
+
+    result = engine.analyze_activity()
+
+    assert result["threat_level"] == "Critical"
+    assert result["incident_id"] is not None
+    assert any(
+        item.get("success")
+        for item in result.get("quarantine_results", [])
+    )
+
+    # Verify the original remains unchanged.
+    assert source.read_text() == "Harmless RDRS integration test evidence."
+    assert (quarantine_dir / source.name).read_text() == source.read_text()

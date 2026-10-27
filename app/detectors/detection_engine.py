@@ -1,17 +1,19 @@
 
 import re
-from datetime import datetime, timedelta
 from collections import deque
 from datetime import datetime, timedelta
+from pathlib import Path
+
 from app.core.config import load_config
 from app.core.entropy import calculate_file_entropy
-from pathlib import Path
 from app.database.connection import (
     get_recent_alerts,
     get_recent_process_snapshots,
     save_alert,
     save_incident,
 )
+from app.response.quarantine import quarantine_file
+
 
 class DetectionEngine:
     """Track recent filesystem events for ransomware detection."""
@@ -38,7 +40,7 @@ class DetectionEngine:
         self.remove_old_events()
 
     def remove_old_events(self):
-        """Remove events that are older than the sliding window."""
+        """Remove events older than the sliding window."""
         cutoff_time = datetime.now() - self.window
 
         while (
@@ -46,7 +48,6 @@ class DetectionEngine:
             and self.recent_events[0]["timestamp"] < cutoff_time
         ):
             self.recent_events.popleft()
-
 
     def count_modifications(self):
         """Count modification events in the current time window."""
@@ -64,7 +65,6 @@ class DetectionEngine:
             if event["event_type"] == "moved"
         )
 
-   
     def calculate_threat_score(
         self,
         rapid_file_changes=False,
@@ -93,7 +93,6 @@ class DetectionEngine:
 
         return min(score, 100)
 
-
     def evaluate_file_activity(self):
         """Check whether recent file activity exceeds configured thresholds."""
         modification_count = self.count_modifications()
@@ -102,7 +101,6 @@ class DetectionEngine:
         rapid_file_changes = (
             modification_count >= self.thresholds["rapid_file_changes"]
         )
-
         mass_renames = (
             rename_count >= self.thresholds["mass_renames"]
         )
@@ -113,10 +111,6 @@ class DetectionEngine:
             "rapid_file_changes": rapid_file_changes,
             "mass_renames": mass_renames,
         }
-
-
-   
- 
 
     def analyze_activity(self):
         """Evaluate file and process activity and calculate threat score."""
@@ -145,9 +139,7 @@ class DetectionEngine:
             if result.get("high_entropy", False):
                 high_entropy = True
 
-       
-        # Check recent process snapshots for high CPU usage
-        # and unrecognized process names.
+        # Check recent process snapshots for CPU spikes and unknown names.
         cpu_spike = False
         unknown_process = False
         process_results = []
@@ -169,15 +161,15 @@ class DetectionEngine:
             if name_result["unknown_process"]:
                 unknown_process = True
 
-
-        # Calculate the combined threat score.
+        # Preserve the existing scoring behavior.
+        # Unknown-process scoring remains disabled here intentionally.
         score = self.calculate_threat_score(
-    rapid_file_changes=activity["rapid_file_changes"],
-    mass_renames=activity["mass_renames"],
-    high_entropy=high_entropy,
-    cpu_spike=cpu_spike,
-    unknown_process=False,
-)
+            rapid_file_changes=activity["rapid_file_changes"],
+            mass_renames=activity["mass_renames"],
+            high_entropy=high_entropy,
+            cpu_spike=cpu_spike,
+            unknown_process=False,
+        )
 
         activity["high_entropy"] = high_entropy
         activity["entropy_results"] = entropy_results
@@ -187,11 +179,11 @@ class DetectionEngine:
         activity["threat_score"] = score
         activity["threat_level"] = self.classify_threat_level(score)
 
-       
-        # Save an alert only if a matching alert was not created
-        # during the last five minutes.
+        # Save an alert only if a matching alert was not created recently.
         if score >= 40:
-            title = f"{activity['threat_level']} ransomware activity detected"
+            title = (
+                f"{activity['threat_level']} ransomware activity detected"
+            )
             description = (
                 f"Detected {activity['modification_count']} file modifications, "
                 f"{activity['rename_count']} file renames, "
@@ -210,7 +202,6 @@ class DetectionEngine:
             cutoff = datetime.now() - timedelta(minutes=5)
             duplicate_found = False
 
-           
             for alert in get_recent_alerts(limit=100):
                 if alert.timestamp < cutoff:
                     break
@@ -243,7 +234,6 @@ class DetectionEngine:
                     duplicate_found = True
                     break
 
-
             if not duplicate_found:
                 alert_id = save_alert(
                     title=title,
@@ -265,6 +255,41 @@ class DetectionEngine:
                         severity="Critical",
                         alert_id=alert_id,
                     )
+
+                    # Copy eligible evidence without altering originals.
+                    quarantine_results = []
+                    seen_paths = set()
+
+                    for event in self.recent_events:
+                        file_path = event.get("file_path")
+
+                        if (
+                            not file_path
+                            or event.get("event_type")
+                            not in {"created", "modified", "moved"}
+                        ):
+                            continue
+
+                        source_path = str(Path(file_path).resolve())
+
+                        if source_path in seen_paths:
+                            continue
+
+                        seen_paths.add(source_path)
+
+                        try:
+                            result = quarantine_file(source_path)
+                        except Exception:
+                            # A quarantine failure must not hide the incident.
+                            result = {
+                                "success": False,
+                                "source": source_path,
+                                "reason": "Unexpected quarantine error.",
+                            }
+
+                        quarantine_results.append(result)
+
+                    activity["quarantine_results"] = quarantine_results
                 else:
                     activity["incident_id"] = None
             else:
@@ -276,10 +301,6 @@ class DetectionEngine:
 
         return activity
 
-
-
-
-
     def classify_threat_level(self, score):
         """Classify a threat score into a severity level."""
         if score >= 70:
@@ -289,8 +310,6 @@ class DetectionEngine:
         else:
             return "Normal"
 
-
-   
     def check_file_entropy(self, file_path):
         """Check whether a file has unusually high entropy."""
         try:

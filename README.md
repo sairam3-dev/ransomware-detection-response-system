@@ -193,6 +193,50 @@ Open the dashboard:
 
 http://localhost:8501
 
+## Docker Deployment
+
+RDRS can be run using Docker Compose. Docker runs the FastAPI backend and Streamlit dashboard as separate services.
+
+### Prerequisites
+
+- Docker Desktop installed and running.
+- Docker Compose available through the Docker CLI.
+
+### Start the application
+
+From the project root, run:
+
+```powershell
+docker compose up --build -d
+```
+
+### Access the application
+
+- **Dashboard:** http://localhost:8501
+- **API:** http://localhost:8081
+- **Interactive API documentation:** http://localhost:8081/docs
+- **Health check:** http://localhost:8081/health
+
+### Check container status
+
+```powershell
+docker compose ps
+```
+
+### View API logs
+
+```powershell
+docker compose logs --tail 50 api
+```
+
+### Stop the application
+
+```powershell
+docker compose down
+```
+
+The application uses simulation mode for defensive testing. Use only harmless test files in the configured sandbox. Review the configuration before monitoring files.
+
 ## API Endpoints
 
 | Method | Endpoint                          | Description                         |
@@ -223,7 +267,7 @@ Run the automated test suite:
 python -m pytest -q
 ```
 
-**Latest verified result:** 22 passed, 0 failed, with 3 deprecation warnings.
+**Latest verified result:** 23 passed, 0 failed, with 1 deprecation warning.
 
 The tests cover API behavior, detection-engine logic, duplicate alert and incident behavior, and report generation. Test database isolation is configured separately from the live application database.
 

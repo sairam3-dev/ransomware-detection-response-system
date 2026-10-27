@@ -3,7 +3,9 @@ from datetime import datetime
 from pathlib import Path
 
 from watchdog.events import FileSystemEventHandler
+import os
 from watchdog.observers import Observer
+from watchdog.observers.polling import PollingObserver
 from app.database.connection import save_file_event
 from app.detectors.detection_engine import DetectionEngine
 
@@ -78,7 +80,10 @@ def start_file_monitoring():
     watch_path.mkdir(parents=True, exist_ok=True)
 
     event_handler = RansomwareFileHandler()
-    observer = Observer()
+    if os.getenv("WATCHDOG_FORCE_POLLING", "").lower() == "true":
+     observer = PollingObserver(timeout=1)
+    else:
+     observer = Observer()
     observer.schedule(event_handler, str(watch_path), recursive=True)
 
     observer.start()
