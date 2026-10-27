@@ -41,3 +41,5 @@ data/sandbox/
 data/quarantine/
 
 # Duplicate sandbox ignore entry already exists above
+# Test coverage output
+.coverage
